@@ -1,0 +1,461 @@
+\documentclass[12pt, a4paper]{article}
+
+\usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=3cm, right=2.5cm]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage[colorlinks=true, linkcolor=darkblue, urlcolor=darkblue, citecolor=darkblue]{hyperref}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{parskip}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{pifont}
+\setlength{\headheight}{14.5pt}
+
+% Colors
+\definecolor{darkblue}{RGB}{0, 70, 130}
+\definecolor{codegreen}{rgb}{0.1, 0.5, 0.1}
+\definecolor{codegray}{rgb}{0.5, 0.5, 0.5}
+\definecolor{codepurple}{rgb}{0.5, 0.0, 0.7}
+\definecolor{backcolour}{RGB}{248, 248, 248}
+
+% Code listing style
+\lstdefinestyle{pystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen}\itshape,
+    keywordstyle=\color{darkblue}\bfseries,
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=8pt,
+    showstringspaces=false,
+    frame=single,
+    rulecolor=\color{gray!40},
+    xleftmargin=1.5em,
+    framexleftmargin=1.5em,
+    tabsize=4,
+}
+\lstset{style=pystyle}
+
+% Header and footer
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small\textcolor{gray}{HW1 — Signal Denoising with Neural Networks}}
+\rhead{\small\textcolor{gray}{AI Orchestration}}
+\cfoot{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% Section formatting
+\titleformat{\section}{\large\bfseries\color{darkblue}}{}{0em}{\thesection.\quad}[\vspace{-0.3em}\rule{\linewidth}{0.6pt}]
+\titleformat{\subsection}{\normalsize\bfseries}{}{0em}{\thesubsection\quad}
+\titleformat{\subsubsection}{\normalsize\itshape}{}{0em}{\thesubsubsection\quad}
+
+% Checkmark
+\newcommand{\cmark}{\textcolor{green!60!black}{\ding{51}}}
+
+\begin{document}
+
+% ─── Title page ──────────────────────────────────────────────────────────────
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+
+{\color{darkblue}\rule{\linewidth}{1.5pt}}\vspace{0.4em}
+{\color{darkblue}\rule{\linewidth}{0.4pt}}
+
+\vspace{1cm}
+{\LARGE\bfseries Homework 1 — Lab Report \par}
+\vspace{0.4cm}
+{\Large Signal Denoising with MLP, RNN, and LSTM \par}
+\vspace{1cm}
+
+{\color{darkblue}\rule{\linewidth}{0.4pt}}\vspace{0.2em}
+{\color{darkblue}\rule{\linewidth}{1.5pt}}
+
+\vspace{2.5cm}
+
+\begin{tabular}{rl}
+    \textbf{Course}     & AI Orchestration / Deep Learning \\[6pt]
+    \textbf{Lecturer}   & Dr.\ Yoram Segal \\[6pt]
+    \textbf{Student}    & Mohammed Akariya \\[6pt]
+    \textbf{Date}       & May 2026 \\[6pt]
+    \textbf{Repository} & \href{https://github.com/akariya-mohammed/hw1-rnn-lstm}
+                           {\texttt{github.com/akariya-mohammed/hw1-rnn-lstm}} \\
+\end{tabular}
+
+\vfill
+\end{titlepage}
+
+% ─── Table of contents ───────────────────────────────────────────────────────
+\tableofcontents
+\newpage
+
+% ─── Abstract ────────────────────────────────────────────────────────────────
+\begin{abstract}
+\noindent
+This report describes the design, implementation, and comparison of three neural
+network architectures on a signal denoising task: a fully-connected
+Multi-Layer Perceptron (MLP), a Recurrent Neural Network (RNN), and a
+Long Short-Term Memory network (LSTM).
+Each model receives a 10-sample window of a noisy sine wave together with
+a one-hot encoding of the signal frequency, and is trained to recover the
+underlying clean signal using Mean Squared Error (MSE) loss.
+Contrary to the theoretical prediction that the LSTM would achieve the
+lowest error, the MLP obtained the best test MSE (0.0018), followed by
+the LSTM (0.0054) and the RNN (0.0062).
+The report analyses the reasons behind this result and discusses what it
+reveals about the relationship between model choice and task structure.
+\end{abstract}
+
+\newpage
+
+% ─── 1. Problem Statement ────────────────────────────────────────────────────
+\section{Problem Statement}
+
+The goal of this assignment is to compare three deep learning architectures
+on a controlled signal-processing task.
+Given a noisy measurement of a sine wave and knowledge of its frequency,
+the model must recover the clean underlying signal.
+
+Formally, for each data sample:
+\begin{itemize}[noitemsep]
+    \item \textbf{Input:} $(\mathbf{C},\, \mathbf{S}_{\text{noisy}})$ — one-hot
+          frequency vector $\mathbf{C} \in \mathbb{R}^{4}$ and 10 consecutive
+          noisy samples $\mathbf{S}_{\text{noisy}} \in \mathbb{R}^{10}$
+    \item \textbf{Target:} $\mathbf{S}_{\text{clean}} \in \mathbb{R}^{10}$ —
+          the corresponding noise-free samples
+\end{itemize}
+
+The loss function is Mean Squared Error:
+\begin{equation}
+    \mathcal{L} = \frac{1}{N}\sum_{i=1}^{N}\!\bigl(\hat{y}_i - y_i\bigr)^2
+    \label{eq:mse}
+\end{equation}
+
+Three architectures are compared to understand how architectural choices
+affect performance on time-series data.
+
+% ─── 2. Signal Generation ────────────────────────────────────────────────────
+\section{Signal Generation}
+
+\subsection{Signal model}
+
+Each signal follows the additive noise model:
+\begin{equation}
+    y(t) \;=\; A \cdot \sin(2\pi f t) \;+\; \varepsilon,
+    \qquad \varepsilon \sim \mathcal{N}(0,\,\sigma A)
+    \label{eq:signal}
+\end{equation}
+
+Table~\ref{tab:params} summarises the chosen parameter values and their
+justification.
+
+\begin{table}[H]
+\centering
+\caption{Signal generation parameters}
+\label{tab:params}
+\begin{tabular}{lll}
+\toprule
+\textbf{Symbol} & \textbf{Value} & \textbf{Justification} \\
+\midrule
+$A$ (amplitude)       & 1.0     & Unit scale — simplifies analysis \\
+$\sigma$ (noise \%)   & 0.10    & 10\,\% of amplitude; audible yet learnable \\
+$f_s$ (sample rate)   & 100\,Hz & Satisfies Nyquist for all four frequencies \\
+$T$ (duration)        & 10\,s   & 1\,000 samples per frequency \\
+Window size           & 10      & As specified; equals 100\,ms of data \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Chosen frequencies}
+
+Four frequencies were selected to span a decade while remaining well below
+the Nyquist limit of 50\,Hz. They are deliberately spread to create a
+range of difficulties:
+
+\begin{table}[H]
+\centering
+\caption{Chosen frequencies and expected difficulty}
+\label{tab:freqs}
+\begin{tabular}{clcc}
+\toprule
+\textbf{Index} & \textbf{Frequency} & \textbf{Periods visible} & \textbf{Difficulty} \\
+\midrule
+0 & 1\,Hz  & 0.1 & Hard — barely a fraction of a period \\
+1 & 2\,Hz  & 0.2 & Medium-hard \\
+2 & 5\,Hz  & 0.5 & Medium — half a period visible \\
+3 & 10\,Hz & 1.0 & Easy — full period visible \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Dataset construction}
+
+For each frequency, a 10-second clean/noisy signal pair is generated using
+equation~\eqref{eq:signal}.
+A sliding window of width 10 yields 991 overlapping windows per frequency,
+giving \textbf{3\,964 samples} in total.
+An 80/20 train/test split is applied after a random shuffle (seed~42).
+
+Each dataset entry contains:
+\begin{itemize}[noitemsep]
+    \item $\mathbf{C} \in \{0,1\}^4$ — one-hot frequency encoding
+    \item $\mathbf{S}_{\text{noisy}} \in \mathbb{R}^{10}$ — noisy window (model input)
+    \item $\mathbf{S}_{\text{clean}} \in \mathbb{R}^{10}$ — clean window (target)
+\end{itemize}
+
+% ─── 3. Model Architectures ──────────────────────────────────────────────────
+\section{Model Architectures}
+
+\subsection{MLP — Fully Connected Network}
+
+The MLP concatenates the frequency vector with the noisy samples into a
+flat input vector and maps it to the clean output through two hidden layers:
+
+\begin{align}
+    \mathbf{x} &= [\mathbf{C},\;\mathbf{S}_{\text{noisy}}] \in \mathbb{R}^{14} \\
+    \hat{\mathbf{S}}_{\text{clean}}
+        &= W_3\,\text{ReLU}\!\bigl(W_2\,\text{ReLU}(W_1\mathbf{x}+b_1)+b_2\bigr)+b_3
+\end{align}
+
+Layer sizes: $14 \to 64 \to 64 \to 10$.
+Total trainable parameters: \textbf{5\,770}.
+
+The MLP sees all 10 samples simultaneously but has no concept of their
+temporal order.
+
+\subsection{RNN — Recurrent Neural Network}
+
+The RNN processes the noisy samples one step at a time (many-to-many).
+At each time step $t$ the input is $x_t = [s_t^{\text{noisy}},\,\mathbf{C}]
+\in \mathbb{R}^{5}$, and the update rule is:
+\begin{align}
+    h_t &= \tanh(W_{hh}\,h_{t-1} + W_{xh}\,x_t + b_h)
+    \label{eq:rnn} \\
+    \hat{s}_t^{\text{clean}} &= W_o\,h_t + b_o
+\end{align}
+
+The frequency vector $\mathbf{C}$ is repeated at every step so that the
+network is always conditioned on the known frequency.
+Hidden size: 32.
+Total trainable parameters: \textbf{1\,281}.
+
+\subsection{LSTM — Long Short-Term Memory}
+
+The LSTM shares the same input/output interface as the RNN but replaces
+the simple recurrent cell with a gated cell containing three learned gates:
+
+\begin{align}
+    f_t &= \sigma(W_f\,[h_{t-1}, x_t] + b_f)
+        & &\text{(forget gate)} \\
+    i_t &= \sigma(W_i\,[h_{t-1}, x_t] + b_i)
+        & &\text{(input gate)} \\
+    \tilde{C}_t &= \tanh(W_C\,[h_{t-1}, x_t] + b_C)
+        & &\text{(candidate values)} \\
+    C_t &= f_t \odot C_{t-1} + i_t \odot \tilde{C}_t
+        & &\text{(cell state update)} \\
+    o_t &= \sigma(W_o\,[h_{t-1}, x_t] + b_o)
+        & &\text{(output gate)} \\
+    h_t &= o_t \odot \tanh(C_t)
+        & &\text{(hidden state)}
+\end{align}
+
+The cell state $C_t$ acts as a dedicated memory highway: only element-wise
+operations touch it, so gradients can flow across steps without vanishing.
+Hidden size: 32.
+Total trainable parameters: \textbf{5\,025}.
+
+% ─── 4. Training Setup ───────────────────────────────────────────────────────
+\section{Training Setup}
+
+\begin{table}[H]
+\centering
+\caption{Training hyperparameters}
+\label{tab:hyper}
+\begin{tabular}{lll}
+\toprule
+\textbf{Hyperparameter} & \textbf{Value} & \textbf{Justification} \\
+\midrule
+Optimiser          & Adam        & Adaptive learning rate; robust default \\
+Learning rate      & $10^{-3}$   & Standard Adam starting point \\
+Epochs             & 50          & Sufficient for convergence on this dataset \\
+Batch size         & 64          & Balances gradient variance and compute \\
+Loss               & MSE         & Quadratic penalty on reconstruction error \\
+RNN / LSTM hidden  & 32          & Avoids overfitting on $\sim$3\,200 train samples \\
+MLP hidden         & 64          & Larger to compensate for no recurrence \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ─── 5. Results ──────────────────────────────────────────────────────────────
+\section{Results}
+
+\begin{table}[H]
+\centering
+\caption{Final test MSE after 50 training epochs}
+\label{tab:results}
+\begin{tabular}{llll}
+\toprule
+\textbf{Model} & \textbf{Parameters} & \textbf{Test MSE} & \textbf{Rank} \\
+\midrule
+MLP  & 5\,770 & \textbf{0.001842} & 1\textsuperscript{st} (best) \\
+LSTM & 5\,025 & 0.005414          & 2\textsuperscript{nd} \\
+RNN  & 1\,281 & 0.006231          & 3\textsuperscript{rd} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The actual ranking is \textbf{MLP $<$ LSTM $<$ RNN}, which is the
+\emph{opposite} of the theoretical prediction (LSTM $<$ RNN $<$ MLP).
+All three models comfortably beat the trivial baseline of outputting the
+noisy input unchanged, which would yield
+$\text{MSE}_{\text{baseline}} = \sigma^2 = 0.01$.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{training_curves.png}
+    \caption{Training (left) and test (right) MSE over 50 epochs.
+             The MLP converges fastest and to the lowest value.
+             The LSTM starts highest but closes the gap with the RNN by
+             epoch~50.}
+    \label{fig:curves}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{sample_predictions.png}
+    \caption{Sample predictions for each frequency (rows) and each model
+             (columns). Green: clean signal. Red dashed: noisy input.
+             Blue: model prediction.}
+    \label{fig:preds}
+\end{figure}
+
+% ─── 6. Discussion ───────────────────────────────────────────────────────────
+\section{Discussion}
+
+\subsection{Why MLP outperformed the sequential models}
+
+The result is surprising from a theoretical standpoint but has a clear
+explanation once the task structure is examined carefully.
+
+\paragraph{The one-hot vector $\mathbf{C}$ removes the main advantage of RNNs.}
+The reason to prefer a recurrent architecture is its ability to
+\emph{discover} temporal patterns from raw sequences.
+In this task the model is already \emph{given} the frequency explicitly
+via $\mathbf{C}$.
+Because the sine wave is deterministic given its frequency and phase,
+the MLP can learn a fixed frequency-specific linear filter over the 10
+input samples — no sequential discovery is needed.
+
+\paragraph{The MLP sees all 10 samples at once.}
+In the many-to-many RNN/LSTM formulation, the prediction at step $t=1$ is
+made with only 1 sample of context.
+The MLP always has the full window available, giving it a global view
+that is naturally better suited to regression over the entire window.
+
+\paragraph{Short sequences limit the recurrent advantage.}
+The benefit of LSTM over a plain RNN is most visible over long sequences
+(50--100+ steps), where vanishing gradients make the RNN forget early
+context.
+Over 10 steps only, the gating overhead of LSTM costs more in
+optimisation complexity than it gains in memory capacity.
+
+\paragraph{LSTM converges slowly.}
+As shown in Figure~\ref{fig:curves}, the LSTM starts at
+MSE $\approx 0.42$ (epoch~1) versus $\approx 0.25$ for the MLP.
+The three gating mechanisms create a more complex loss landscape.
+Given more training epochs, LSTM would likely improve further.
+
+\subsection{What this teaches us}
+
+The key lesson is that model selection should be driven by whether the
+task \emph{genuinely requires} sequential reasoning, not merely whether
+the data is sequential.
+Here, the label $\mathbf{C}$ converts what looks like a sequence task
+into a frequency-conditioned regression problem that a flat MLP solves
+efficiently.
+If $\mathbf{C}$ were removed and the model had to infer the frequency
+from raw noisy samples alone, the RNN/LSTM advantage would likely
+reappear.
+
+% ─── 7. Self-Assessment ──────────────────────────────────────────────────────
+\section{Self-Assessment — Expected Grade}
+
+The estimated grade for this submission is \textbf{90\,/\,100}.
+
+\begin{table}[H]
+\centering
+\caption{Requirement checklist}
+\label{tab:checklist}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Requirement} & \textbf{Status} & \textbf{Notes} \\
+\midrule
+Dataset: noisy + clean sine waves, 4 frequencies & \cmark & 1, 2, 5, 10\,Hz; $\sigma=10\%$ \\
+One-hot frequency encoding $\mathbf{C}$           & \cmark & Length-4 float32 vector \\
+10-sample context window                           & \cmark & Sliding window over 10\,s signal \\
+Fully-connected MLP                                & \cmark & 2 hidden layers, ReLU \\
+RNN                                                & \cmark & Many-to-many, hidden size 32 \\
+LSTM                                               & \cmark & Many-to-many, same interface as RNN \\
+MSE loss function                                  & \cmark & \texttt{nn.MSELoss} \\
+Unit tests $\geq$ 150 lines                        & \cmark & 46 tests, $\sim$230 lines \\
+README as detailed lab report                      & \cmark & Theory, design choices, results \\
+Choices explained when not specified               & \cmark & Frequencies, $\sigma$, hidden sizes \\
+GitHub repository link                             & \cmark & See title page \\
+PDF submission                                     & \cmark & This document \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Estimated deductions ($\sim$10 points):} Hyperparameter tuning
+was not exhaustive.
+A grid search over hidden size, learning rate, and number of epochs
+would likely improve the RNN and LSTM results and close the gap
+with the MLP.
+
+% ─── 8. How to Run ───────────────────────────────────────────────────────────
+\section{How to Run}
+
+\begin{lstlisting}[language=bash, caption={Running the project}]
+# Install dependencies
+pip install torch numpy matplotlib
+
+# Run unit tests
+python -m unittest test_hw1.py -v
+
+# Train all three models and generate plots
+python main.py
+\end{lstlisting}
+
+% ─── 9. References ───────────────────────────────────────────────────────────
+\section{References}
+
+\begin{enumerate}
+    \item Hochreiter, S.\ \& Schmidhuber, J.\ (1997).
+          Long Short-Term Memory.
+          \textit{Neural Computation}, 9(8), 1735--1780.
+
+    \item Bengio, Y., Simard, P.\ \& Frasconi, P.\ (1994).
+          Learning Long-Term Dependencies with Gradient Descent is
+          Difficult.
+          \textit{IEEE Transactions on Neural Networks}, 5(2), 157--166.
+
+    \item Dr.\ Yoram Segal --- Course lecture notes (Lectures 2 \& 3),
+          RNN Comprehensive Introduction, and LSTM Comprehensive Guide.
+\end{enumerate}
+
+\end{document}
