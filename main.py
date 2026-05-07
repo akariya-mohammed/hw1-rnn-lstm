@@ -9,10 +9,10 @@ from dataset import (
     generate_signal, generate_combined_signal,
     FREQUENCIES, SAMPLE_RATE, WINDOW_SIZE,
 )
-from models import MLPModel, RNNModel, LSTMModel
+from models import MLPModel, RNNModel, LSTMModel, BiRNNModel, BiLSTMModel
 from train import train_model, evaluate_model, evaluate_per_frequency
 
-N_EPOCHS = 50
+N_EPOCHS = 200
 N_EPOCHS_COMBINED = 200
 BATCH_SIZE = 64
 LR = 1e-3
@@ -37,7 +37,8 @@ def plot_training_curves(results):
 
 def plot_sample_predictions(models_dict, device):
     """Visualise clean / noisy / predicted signals for each frequency."""
-    fig, axes = plt.subplots(len(FREQUENCIES), 3, figsize=(15, 3 * len(FREQUENCIES)))
+    n_models = len(models_dict)
+    fig, axes = plt.subplots(len(FREQUENCIES), n_models, figsize=(4 * n_models, 3 * len(FREQUENCIES)))
     model_names = list(models_dict.keys())
 
     rng = np.random.default_rng(0)
@@ -177,6 +178,8 @@ def main():
         "MLP": MLPModel,
         "RNN": RNNModel,
         "LSTM": LSTMModel,
+        "BiRNN": BiRNNModel,
+        "BiLSTM": BiLSTMModel,
     }
 
     results = {}

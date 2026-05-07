@@ -10,7 +10,7 @@ from dataset import (
     generate_combined_signal, CombinedSignalDataset, get_combined_dataloaders,
     FREQUENCIES, SAMPLE_RATE, DURATION, WINDOW_SIZE, N_FREQS,
 )
-from models import MLPModel, RNNModel, LSTMModel
+from models import MLPModel, RNNModel, LSTMModel, BiRNNModel, BiLSTMModel
 
 
 # ---------------------------------------------------------------------------
@@ -318,6 +318,95 @@ class TestLSTMModel(unittest.TestCase):
         out_rnn = rnn(freq, noisy)
         out_lstm = lstm(freq, noisy)
         self.assertEqual(out_rnn.shape, out_lstm.shape)
+
+
+# ---------------------------------------------------------------------------
+# BiRNNModel
+# ---------------------------------------------------------------------------
+
+class TestBiRNNModel(unittest.TestCase):
+
+    def setUp(self):
+        self.model = BiRNNModel()
+        self.B = 8
+
+    def _dummy(self):
+        freq = torch.zeros(self.B, N_FREQS)
+        freq[:, 0] = 1.0
+        noisy = torch.randn(self.B, WINDOW_SIZE)
+        return freq, noisy
+
+    def test_output_shape(self):
+        freq, noisy = self._dummy()
+        self.assertEqual(self.model(freq, noisy).shape, (self.B, WINDOW_SIZE))
+
+    def test_output_finite(self):
+        freq, noisy = self._dummy()
+        self.assertTrue(torch.isfinite(self.model(freq, noisy)).all())
+
+    def test_gradients_flow(self):
+        freq, noisy = self._dummy()
+        clean = torch.randn(self.B, WINDOW_SIZE)
+        loss = nn.MSELoss()(self.model(freq, noisy), clean)
+        loss.backward()
+        grads = [p.grad for p in self.model.parameters() if p.grad is not None]
+        self.assertGreater(len(grads), 0)
+
+    def test_bidirectional_fc_input_size(self):
+        self.assertEqual(self.model.fc.in_features, self.model.rnn.hidden_size * 2)
+
+    def test_is_bidirectional(self):
+        self.assertTrue(self.model.rnn.bidirectional)
+
+    def test_has_two_layers(self):
+        self.assertEqual(self.model.rnn.num_layers, 2)
+
+
+# ---------------------------------------------------------------------------
+# BiLSTMModel
+# ---------------------------------------------------------------------------
+
+class TestBiLSTMModel(unittest.TestCase):
+
+    def setUp(self):
+        self.model = BiLSTMModel()
+        self.B = 8
+
+    def _dummy(self):
+        freq = torch.zeros(self.B, N_FREQS)
+        freq[:, 0] = 1.0
+        noisy = torch.randn(self.B, WINDOW_SIZE)
+        return freq, noisy
+
+    def test_output_shape(self):
+        freq, noisy = self._dummy()
+        self.assertEqual(self.model(freq, noisy).shape, (self.B, WINDOW_SIZE))
+
+    def test_output_finite(self):
+        freq, noisy = self._dummy()
+        self.assertTrue(torch.isfinite(self.model(freq, noisy)).all())
+
+    def test_gradients_flow(self):
+        freq, noisy = self._dummy()
+        clean = torch.randn(self.B, WINDOW_SIZE)
+        loss = nn.MSELoss()(self.model(freq, noisy), clean)
+        loss.backward()
+        grads = [p.grad for p in self.model.parameters() if p.grad is not None]
+        self.assertGreater(len(grads), 0)
+
+    def test_bidirectional_fc_input_size(self):
+        self.assertEqual(self.model.fc.in_features, self.model.lstm.hidden_size * 2)
+
+    def test_is_bidirectional(self):
+        self.assertTrue(self.model.lstm.bidirectional)
+
+    def test_has_two_layers(self):
+        self.assertEqual(self.model.lstm.num_layers, 2)
+
+    def test_bilstm_beats_lstm_params(self):
+        lstm_params = sum(p.numel() for p in LSTMModel().parameters())
+        bilstm_params = sum(p.numel() for p in self.model.parameters())
+        self.assertGreater(bilstm_params, lstm_params)
 
 
 # ---------------------------------------------------------------------------

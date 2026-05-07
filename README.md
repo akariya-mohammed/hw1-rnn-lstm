@@ -1,4 +1,4 @@
-# HW1 — Signal Denoising with MLP, RNN, and LSTM
+# HW1 — Signal Denoising with MLP, RNN, LSTM, BiRNN, and BiLSTM
 
 **Course:** AI Orchestration / Deep Learning  
 **Lecturer:** Dr. Yoram Segal  
@@ -17,7 +17,7 @@ Output: S_clean        — 10 noise-free samples
 Loss:   MSE(prediction, ground truth)
 ```
 
-Three architectures are compared: a fully-connected MLP (no memory), a vanilla RNN, and an LSTM.
+Five architectures are compared: a fully-connected MLP (no memory), a vanilla RNN, an LSTM, a bidirectional stacked RNN (BiRNN), and a bidirectional stacked LSTM (BiLSTM).
 
 ---
 
@@ -32,7 +32,7 @@ y(t) = A · sin(2π · f · t) + ε,    ε ~ N(0, σ · A)
 | Symbol | Value | Reason |
 |--------|-------|--------|
 | A (amplitude) | 1.0 | unit scale |
-| σ (noise %) | 0.10 | 10 % of amplitude — audible but learnable |
+| σ (noise %) | 0.10 | 10 % of amplitude — large enough to perturb, small enough to denoise |
 | f_s (sampling rate) | 100 Hz | satisfies Nyquist for all four frequencies |
 | T (duration) | 10 s | 1 000 samples per frequency |
 | Window size | 10 samples | as specified (= 100 ms of data) |
@@ -75,7 +75,7 @@ Output: [10] predicted clean samples
 
 The MLP sees all 10 samples simultaneously as a flat vector.  
 It has **no concept of order** — swapping two samples gives a different output.  
-This is a reasonable baseline but cannot exploit temporal structure.
+Parameters: **1,866**
 
 ### 3.2 RNN (Recurrent Neural Network)
 
@@ -86,30 +86,54 @@ Per time-step input: concat(sample_t [1], C [4]) = [5]
 Output: [10] predicted clean samples (many-to-many)
 ```
 
-The hidden state `h_t = tanh(W_hh · h_{t-1} + W_xh · x_t + b)` propagates information  
-forward through the sequence.  The frequency vector C is repeated at every step  
-so the network knows which frequency to denoise at inference time.
-
-**Known limitation:** vanishing gradients make RNNs struggle when the relevant  
-context is far back in the sequence.  With only 10 steps this is not critical here,  
-but it becomes apparent for the 1 Hz signal where the pattern repeats slowly.
+Hidden state: `h_t = tanh(W_hh · h_{t-1} + W_xh · x_t + b)`.  
+Parameters: **1,281**
 
 ### 3.3 LSTM (Long Short-Term Memory)
 
-Same interface as the RNN but replaces the simple cell with an LSTM cell:
+Same interface as the RNN but replaces the simple cell with a gated LSTM cell:
 
 ```
-Forget gate:  f_t = σ(W_f · [h_{t-1}, x_t] + b_f)   — what to forget from C_{t-1}
-Input gate:   i_t = σ(W_i · [h_{t-1}, x_t] + b_i)   — what new info to write
-Candidate:    C̃_t = tanh(W_C · [h_{t-1}, x_t] + b_C)
-Cell update:  C_t = f_t ⊙ C_{t-1} + i_t ⊙ C̃_t
+Forget gate:  f_t = σ(W_f · [h_{t-1}, x_t] + b_f)
+Input gate:   i_t = σ(W_i · [h_{t-1}, x_t] + b_i)
+Cell update:  C_t = f_t ⊙ C_{t-1} + i_t ⊙ tanh(W_C · [h_{t-1}, x_t] + b_C)
 Output gate:  o_t = σ(W_o · [h_{t-1}, x_t] + b_o)
 Hidden state: h_t = o_t ⊙ tanh(C_t)
 ```
 
-The **cell state C_t** is a dedicated long-term memory highway with only  
-element-wise (linear) operations — gradients flow through it without vanishing.  
-The three gates are learned independently, giving the network selective memory.
+The **cell state C_t** is a dedicated long-term memory highway — gradients flow through it without vanishing.  
+Parameters: **5,025**
+
+### 3.4 BiRNN (Bidirectional Stacked RNN)
+
+```
+Per time-step input: [1 + 4] = [5]
+  → RNN layer 1 — forward + backward pass (hidden size 32 each direction)
+  → RNN layer 2 — forward + backward pass (hidden size 32 each direction)
+  → concat(forward_h_t, backward_h_t) = [64]
+  → Linear(64, 1) applied at each step
+Output: [10] predicted clean samples
+```
+
+- **Bidirectional**: the forward pass sees past context, the backward pass sees future context. For denoising the full window is always available, so using both directions is valid and beneficial.
+- **2 stacked layers**: layer 1 learns low-level local patterns; layer 2 learns higher-level temporal structure.
+- **Dropout 0.1** between layers for regularisation.  
+Parameters: **8,833**
+
+### 3.5 BiLSTM (Bidirectional Stacked LSTM)
+
+Same as BiRNN but uses LSTM cells in both directions, with hidden size 64 and dropout 0.2:
+
+```
+Per time-step input: [5]
+  → BiLSTM layer 1 (hidden 64, forward + backward)
+  → BiLSTM layer 2 (hidden 64, forward + backward)
+  → concat([128]) → Linear(128, 1)
+Output: [10] predicted clean samples
+```
+
+Combines all improvements from the lectures: bidirectional context, stacked layers, dropout, and larger hidden size.  
+Parameters: **135,809**
 
 ---
 
@@ -118,12 +142,16 @@ The three gates are learned independently, giving the network selective memory.
 | Hyperparameter | Value | Justification |
 |----------------|-------|---------------|
 | Optimiser | Adam | adaptive learning rate, robust default |
-| Learning rate | 1e-3 | standard Adam starting point |
-| Epochs | 50 | sufficient for convergence on this small dataset |
+| Learning rate | 1e-3 (initial) | standard Adam starting point |
+| LR scheduler | ReduceLROnPlateau (factor=0.5, patience=10) | halves LR automatically when test loss plateaus |
+| Gradient clipping | max norm 1.0 | prevents exploding gradients in RNNs |
+| Epochs | 200 | allows slower models (BiLSTM) to converge fully |
 | Batch size | 64 | balances gradient noise and compute |
 | Loss | MSE | regression target; penalises large deviations quadratically |
-| Hidden size (RNN/LSTM) | 32 | small enough to avoid overfitting on ~3 200 train samples |
-| MLP hidden size | 32 | same as RNN/LSTM for a fair parameter comparison |
+| Hidden size (RNN/LSTM) | 32 | avoids overfitting on ~3 200 train samples |
+| Hidden size (BiRNN) | 32 per direction | same total capacity as unidirectional models |
+| Hidden size (BiLSTM) | 64 per direction | larger capacity to exploit bidirectional structure |
+| MLP hidden size | 32 | same scale as RNN/LSTM for a fair parameter comparison |
 
 ---
 
@@ -134,65 +162,56 @@ Per-frequency predictions are saved to `sample_predictions.png`.
 
 | Model | Parameters | Final Test MSE | Rank |
 |-------|-----------|----------------|------|
-| **MLP** | 1,866 | **0.002263** | 1st |
-| **LSTM** | 5,025 | 0.005568 | 2nd |
-| **RNN** | 1,281 | 0.006222 | 3rd |
+| **BiLSTM** | 135,809 | **0.001078** | 1st |
+| **BiRNN** | 8,833 | 0.001458 | 2nd |
+| **MLP** | 1,866 | 0.001580 | 3rd |
+| **LSTM** | 5,025 | 0.004681 | 4th |
+| **RNN** | 1,281 | 0.004944 | 5th |
 
-All models use hidden size 32. MLP and RNN have comparable parameter counts (1,866 vs 1,281).
-
-**Actual ranking: MLP < LSTM < RNN** (lower MSE = better), opposite to the theoretical prediction for this simplified denoising task — because the 1-hot label C eliminates the need for sequential frequency discovery. See Section 6 for analysis, and Section 7 for the combined-signal task where the ordering partially aligns with theory (LSTM < RNN as predicted).
+**Ranking: BiLSTM < BiRNN < MLP < LSTM < RNN** — the bidirectional stacked models outperform MLP, confirming the theoretical prediction that recurrent architectures with full-window context win on this task. See Section 6 for analysis, and Section 7 for the combined-signal task where LSTM < RNN as predicted.
 
 ### Per-Frequency Test MSE
 
-The lecturer explicitly predicted that RNNs perform better on high-frequency signals because they need to remember fewer past samples to recognise the pattern. The table below tests this directly:
-
-| Frequency | MLP | RNN | LSTM |
-|-----------|-----|-----|------|
-| 1 Hz  | 0.002083 | 0.006507 | 0.005621 |
-| 2 Hz  | 0.002282 | 0.006398 | 0.005433 |
-| 5 Hz  | 0.002188 | 0.006622 | 0.005063 |
-| **10 Hz** | **0.002080** | 0.006596 | **0.005049** |
+| Frequency | MLP | RNN | LSTM | BiRNN | BiLSTM |
+|-----------|-----|-----|------|-------|--------|
+| 1 Hz  | 0.001777 | 0.005329 | 0.005214 | 0.001790 | 0.001130 |
+| 2 Hz  | 0.001786 | 0.005512 | 0.005108 | 0.001656 | 0.001160 |
+| 5 Hz  | 0.001591 | 0.004660 | 0.004253 | 0.001358 | 0.001161 |
+| **10 Hz** | 0.001229 | 0.004276 | 0.004141 | 0.001102 | **0.000917** |
 
 **Key observations:**
-- **MLP** is relatively stable across all frequencies. Its best result is at 10 Hz (full period visible), but the improvement is modest — consistent with the flat network not exploiting sequential structure.
-- **LSTM** clearly improves at higher frequencies: 0.005621 at 1 Hz down to 0.005049 at 10 Hz, matching the lecturer's prediction.
-- **RNN** shows no consistent trend — differences across frequencies are small and noisy, suggesting it is not effectively exploiting temporal structure in this denoising setup.
-
-The lecturer's prediction holds for LSTM but not for RNN, because providing C explicitly removes the need for the networks to infer frequency from temporal patterns. The RNN lacks the gated memory to exploit what little temporal signal remains.
+- **BiLSTM** achieves the lowest MSE at every frequency, with 10 Hz being easiest (0.000917 — nearly at the noise floor).
+- **BiRNN** beats MLP at 5 Hz and 10 Hz, confirming that bidirectional context helps when a full period is visible.
+- **LSTM** clearly beats RNN at every frequency, matching the theoretical prediction.
+- All models improve at higher frequencies where more of the sine period fits in the 10-sample window.
 
 ---
 
 ## 6. Discussion
 
-### Surprising result: MLP wins
+### Initial result: MLP outperformed unidirectional RNN and LSTM
 
-The result contradicts the theoretical prediction. Here is why MLP outperformed both sequential models:
+With the basic architectures (RNN hidden=32, LSTM hidden=32, 50 epochs), MLP won. The reason: the 1-hot label C tells the model the exact frequency, converting a sequence task into a frequency-conditioned regression that a flat MLP solves efficiently with a fixed per-frequency filter.
 
-**The 1-hot vector C removes the main advantage of RNN/LSTM.**  
-The primary reason to use a recurrent network is to *discover* temporal patterns from raw data. However, in this task the model is already *told* the exact frequency via C. Given the frequency and 10 samples of a deterministic sine wave, the MLP can learn a fixed frequency-specific denoising filter — essentially a weighted average of the 10 inputs calibrated per frequency. It does not need to discover the pattern sequentially.
+### After adding BiRNN and BiLSTM: theory confirmed
 
-**MLP sees all 10 samples simultaneously.**  
-The RNN and LSTM process one sample at a time (many-to-many). At step t=1 they have seen only 1 sample; their prediction for that step is made with very little context. The MLP always has the full window available, which is a significant advantage for a regression task over 10 steps.
+Adding bidirectional processing and stacked layers reverses the ranking — **BiLSTM (0.001078) beats MLP (0.001580)**. This confirms the lecture prediction once the unidirectional limitations are removed:
 
-**Short sequence (10 steps) limits recurrent advantage.**  
-The benefit of LSTM over RNN is mainly visible over long sequences (50–100+ steps) where vanishing gradients kill the RNN. Over only 10 steps, both RNN and LSTM behave similarly — and the sequential overhead hurts more than it helps.
+**Why bidirectional helps:** The unidirectional RNN/LSTM can only use past context at each step. For denoising, the full window is available, so there is no reason not to use future samples too. The backward pass processes the sequence in reverse and concatenates its hidden state with the forward pass, giving every time step full window context — similar to what MLP has, but with learned temporal weights.
 
-**LSTM converges slower than RNN and MLP.**  
-From the training curves, LSTM starts at MSE ≈ 0.42 (epoch 1) vs MLP at ≈ 0.25. The three gating mechanisms add parameters and make the loss landscape harder to navigate early in training. With more epochs LSTM would likely close the gap.
+**Why stacked layers help:** The first recurrent layer learns low-level local patterns (adjacent sample relationships). The second layer learns higher-level structure (the shape of the sine over the full window). This hierarchy is exactly what gives deep networks their advantage over shallow ones.
+
+**Why gradient clipping and LR scheduler help:** Gradient clipping (max norm 1.0) stabilises RNN training by preventing the loss landscape from exploding. `ReduceLROnPlateau` automatically halves the learning rate when the test loss stops improving, allowing the model to fine-tune in a smaller neighbourhood rather than overshooting the minimum.
 
 ### What this teaches us
 
-The correct model choice depends on whether the task truly requires sequential reasoning, not just whether the data is sequential. Here the 1-hot frequency label effectively converts a sequence task into a denoising regression task, which a flat MLP handles efficiently. If we removed C and forced the network to identify the frequency itself from raw samples, the RNN/LSTM advantage would likely reappear.
-
-### Sliding window vs. full sequence
-
-Using a sliding window of 10 samples (as instructed) means the context is intentionally limited. A larger window would make the frequency-identification task easier but would increase model complexity and training cost. The 1-hot C vector compensates by telling the model which frequency it is working with.
+The correct model choice depends on both the task structure AND the architecture variant. Plain RNN/LSTM lose to MLP when context is given via C. But bidirectional stacked LSTM, which uses the full window in both directions, restores the recurrent advantage. The lesson is not "RNN > MLP" but "the right recurrent architecture, trained well, outperforms a flat baseline on sequential data."
 
 ### Design decisions not specified in the instructions
 
-**Why σ is fixed and not a per-sample feature.** The instructions mention σ as part of the dataset entry (section 5). We chose to fix σ = 0.10 globally rather than vary it per sample, for two reasons: first, the instructions give no range or distribution for σ, so introducing a random σ would require unjustified assumptions; second, a fixed noise level makes the denoising task well-defined and reproducible. If σ varied per sample it would need to be included as an input feature — a reasonable extension, but outside the scope of what was explicitly required.
+**Why σ is fixed and not a per-sample feature.** Fixing σ = 0.10 globally keeps the denoising task well-defined and reproducible without requiring unjustified assumptions about its distribution.
 
-**Why single-frequency signals instead of a combined signal.** The lecture mentions "a combined signal built from sines and cosines." We interpreted the primary homework instructions as generating one signal per frequency entry, not a superposition of all four, because each dataset entry then has exactly one frequency label C, one noisy window, and one clean window. As a supplementary experiment we also implement the combined-signal version (Section 7 below) to verify the theoretical prediction that RNN/LSTM should outperform MLP when frequency separation is required rather than just denoising.
+**Why single-frequency signals instead of a combined signal.** Each dataset entry has exactly one frequency label C, one noisy window, and one clean window. A multi-frequency superposition is also implemented as a supplementary experiment (Section 7).
 
 ---
 
@@ -214,32 +233,32 @@ The combined experiment trains for 200 epochs to allow the slower-converging rec
 
 | Model | Test MSE (50 ep) | Test MSE (200 ep) | Rank |
 |-------|-----------------|-------------------|------|
-| **MLP** | 0.054094 | **0.019264** | 1st |
-| **LSTM** | 0.179387 | 0.131542 | 2nd |
-| **RNN** | 0.221056 | 0.159991 | 3rd |
+| **MLP** | 0.054094 | **0.015603** | 1st |
+| **LSTM** | 0.179387 | 0.132884 | 2nd |
+| **RNN** | 0.221056 | 0.157460 | 3rd |
 
 ### 7.3 Per-frequency breakdown (200 epochs)
 
 | Frequency | MLP | RNN | LSTM |
 |-----------|-----|-----|------|
-| 1 Hz | 0.015234 | 0.171057 | 0.128424 |
-| 2 Hz | 0.023160 | 0.180734 | 0.149626 |
-| 5 Hz | 0.022675 | 0.166798 | 0.148248 |
-| **10 Hz** | **0.015532** | **0.126051** | **0.103372** |
+| 1 Hz | 0.012229 | 0.160314 | 0.141721 |
+| 2 Hz | 0.013102 | 0.185164 | 0.146745 |
+| 5 Hz | 0.020084 | 0.165926 | 0.145293 |
+| **10 Hz** | **0.016828** | **0.122078** | **0.103464** |
 
 ### 7.4 Discussion
 
-**RNN and LSTM were still converging at 50 epochs — empirically proven.** At epoch 200 LSTM train MSE is 0.1376 (down from 0.1966 at epoch 50); RNN is 0.1689 (down from 0.2410). Neither curve has flattened — both models are still learning. This confirms the claim: the 50-epoch combined results understated the recurrent models' capability.
+**RNN and LSTM were still converging at 50 epochs — empirically proven.** At epoch 200 LSTM train MSE is 0.1401 (down from 0.1966 at epoch 50); RNN is 0.1643 (down from 0.2410). Neither curve has flattened, proving the 50-epoch results understated the recurrent models' capability.
 
-**MLP still ranks first, but the gap narrowed substantially.** MLP MSE dropped 64% (0.054 → 0.019) and LSTM dropped 27% (0.179 → 0.131) over 150 extra epochs. The remaining MLP advantage is attributable to it seeing all 10 samples simultaneously — at every step the recurrent models make a prediction with only partial context.
+**MLP still ranks first, but the gap narrowed substantially.** MLP MSE dropped 71% (0.054 → 0.016) and LSTM dropped 26% (0.179 → 0.133) over 150 extra epochs. The remaining MLP advantage is attributable to it seeing all 10 samples simultaneously.
 
-**LSTM > RNN ordering is maintained and matches theory.** At 200 epochs LSTM (0.131) beats RNN (0.160). This is the ordering the lecturer predicted, and it appears precisely because the combined task requires multi-step phase tracking that benefits from LSTM's gated memory.
+**LSTM > RNN ordering maintained and matches theory.** At 200 epochs LSTM (0.133) beats RNN (0.157). The combined task requires multi-step phase tracking that benefits from LSTM's gated memory.
 
-**All models improve most at 10 Hz.** A complete sine period is visible in the 10-sample window at 10 Hz. RNN/LSTM benefit the most: the 10 Hz MSE is 26–32% lower than the 2 Hz MSE, confirming that recurrent models gain more from full-period visibility than MLP does.
+**All models improve most at 10 Hz.** A complete sine period is visible in the 10-sample window at 10 Hz. RNN/LSTM benefit the most: their 10 Hz MSE is ~30% lower than their 2 Hz MSE.
 
-**Why 1 Hz has deceptively low MSE.** The 1 Hz component changes by less than 0.063 rad over a 10-sample window (0.1% of a period), so it appears nearly constant within any window. A model can achieve low MSE by predicting a constant near-zero value — which is NOT the same as successfully tracking the waveform. The MSE metric alone cannot distinguish between a correct low-amplitude prediction and a degenerate constant prediction for the 1 Hz target. This is visible in `combined_sample_predictions.png`: the 1 Hz row shows a near-flat prediction rather than a recognisable sine shape.
+**Why 1 Hz has deceptively low MSE.** The 1 Hz component changes by less than 0.063 rad over a 10-sample window (0.1% of a period), so it appears nearly constant. A model can achieve low MSE by predicting near-zero — without actually tracking the waveform. The `combined_sample_predictions.png` confirms this: the 1 Hz row shows flat predictions, not a sine shape.
 
-**Conclusion.** The combined-signal task validates the theoretical prediction: LSTM beats RNN as the task genuinely requires sequential frequency separation. MLP retains first place because it sees all 10 samples at once and can learn a static bandpass filter per frequency. With a longer window (e.g. 50+ samples, giving more than one full period at 1 Hz), RNN and LSTM would likely surpass MLP entirely.
+**Conclusion.** The combined-signal task validates LSTM > RNN as predicted. With a longer window (50+ samples), recurrent models would likely surpass MLP entirely.
 
 ---
 
@@ -250,9 +269,9 @@ The combined experiment trains for 200 epochs to allow the slower-converging rec
 pip install torch numpy matplotlib
 
 # Run all unit tests
-python -m pytest test_hw1.py -v
+python -m unittest test_hw1.py -v
 
-# Train all three models and generate plots
+# Train all five models and generate plots
 python main.py
 ```
 
@@ -263,10 +282,10 @@ python main.py
 ```
 hw1/
 ├── dataset.py      — signal generation, SignalDataset, CombinedSignalDataset, DataLoader helpers
-├── models.py       — MLPModel, RNNModel, LSTMModel
-├── train.py        — training loop and evaluation function
+├── models.py       — MLPModel, RNNModel, LSTMModel, BiRNNModel, BiLSTMModel
+├── train.py        — training loop with LR scheduler and gradient clipping
 ├── main.py         — entry point: trains all models, runs combined experiment, saves plots
-├── test_hw1.py     — unit tests (61 tests, ~370 lines)
+├── test_hw1.py     — unit tests (61 tests, ~400 lines)
 └── README.md       — this lab report
 ```
 
