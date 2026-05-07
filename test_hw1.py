@@ -7,6 +7,7 @@ import torch.nn as nn
 
 from dataset import (
     generate_signal, freq_to_onehot, SignalDataset, get_dataloaders,
+    generate_combined_signal, CombinedSignalDataset, get_combined_dataloaders,
     FREQUENCIES, SAMPLE_RATE, DURATION, WINDOW_SIZE, N_FREQS,
 )
 from models import MLPModel, RNNModel, LSTMModel
@@ -317,6 +318,98 @@ class TestLSTMModel(unittest.TestCase):
         out_rnn = rnn(freq, noisy)
         out_lstm = lstm(freq, noisy)
         self.assertEqual(out_rnn.shape, out_lstm.shape)
+
+
+# ---------------------------------------------------------------------------
+# Combined signal dataset
+# ---------------------------------------------------------------------------
+
+class TestGenerateCombinedSignal(unittest.TestCase):
+
+    def test_returns_components_and_noisy(self):
+        components, noisy = generate_combined_signal()
+        self.assertEqual(len(components), N_FREQS)
+        self.assertEqual(len(noisy), SAMPLE_RATE * DURATION)
+
+    def test_component_shapes_match_noisy(self):
+        components, noisy = generate_combined_signal()
+        for comp in components:
+            self.assertEqual(len(comp), len(noisy))
+
+    def test_zero_noise_noisy_equals_sum(self):
+        components, noisy = generate_combined_signal(noise_pct=0.0)
+        expected = sum(components)
+        np.testing.assert_allclose(noisy, expected, atol=1e-5)
+
+    def test_each_component_is_sine(self):
+        components, _ = generate_combined_signal(noise_pct=0.0)
+        n = SAMPLE_RATE * DURATION
+        t = np.linspace(0, DURATION, n, endpoint=False)
+        for i, freq in enumerate(FREQUENCIES):
+            expected = np.sin(2 * np.pi * freq * t).astype(np.float32)
+            np.testing.assert_allclose(components[i], expected, atol=1e-5)
+
+    def test_dtype_float32(self):
+        components, noisy = generate_combined_signal()
+        for comp in components:
+            self.assertEqual(comp.dtype, np.float32)
+        self.assertEqual(noisy.dtype, np.float32)
+
+    def test_reproducible(self):
+        rng1 = np.random.default_rng(7)
+        rng2 = np.random.default_rng(7)
+        _, n1 = generate_combined_signal(rng=rng1)
+        _, n2 = generate_combined_signal(rng=rng2)
+        np.testing.assert_array_equal(n1, n2)
+
+
+class TestCombinedSignalDataset(unittest.TestCase):
+
+    def setUp(self):
+        self.ds = CombinedSignalDataset(seed=0)
+
+    def test_length(self):
+        expected = N_FREQS * (SAMPLE_RATE * DURATION - WINDOW_SIZE + 1)
+        self.assertEqual(len(self.ds), expected)
+
+    def test_item_returns_three_tensors(self):
+        self.assertEqual(len(self.ds[0]), 3)
+
+    def test_freq_vec_shape(self):
+        c, _, _ = self.ds[0]
+        self.assertEqual(c.shape, (N_FREQS,))
+
+    def test_combined_noisy_shape(self):
+        _, noisy, _ = self.ds[0]
+        self.assertEqual(noisy.shape, (WINDOW_SIZE,))
+
+    def test_component_shape(self):
+        _, _, comp = self.ds[0]
+        self.assertEqual(comp.shape, (WINDOW_SIZE,))
+
+    def test_all_float32(self):
+        c, noisy, comp = self.ds[0]
+        for tensor in (c, noisy, comp):
+            self.assertEqual(tensor.dtype, torch.float32)
+
+    def test_same_noisy_input_different_freq_targets(self):
+        n_windows = SAMPLE_RATE * DURATION - WINDOW_SIZE + 1
+        _, noisy0, comp0 = self.ds[0]
+        _, noisy1, comp1 = self.ds[n_windows]
+        self.assertTrue(torch.allclose(noisy0, noisy1))
+        self.assertFalse(torch.allclose(comp0, comp1))
+
+    def test_no_nan_values(self):
+        for idx in [0, 100, 500]:
+            for tensor in self.ds[idx]:
+                self.assertFalse(torch.isnan(tensor).any())
+
+    def test_get_combined_dataloaders_split(self):
+        train, test = get_combined_dataloaders(batch_size=32)
+        n_total = len(train.dataset) + len(test.dataset)
+        self.assertEqual(n_total, len(self.ds))
+        ratio = len(train.dataset) / n_total
+        self.assertAlmostEqual(ratio, 0.8, delta=0.01)
 
 
 # ---------------------------------------------------------------------------

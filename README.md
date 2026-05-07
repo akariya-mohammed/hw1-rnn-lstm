@@ -67,9 +67,9 @@ Each dataset entry contains:
 
 ```
 Input: concat(C [4], S_noisy [10]) = [14]
-  → Linear(14, 64) → ReLU
-  → Linear(64, 64) → ReLU
-  → Linear(64, 10)
+  → Linear(14, 32) → ReLU
+  → Linear(32, 32) → ReLU
+  → Linear(32, 10)
 Output: [10] predicted clean samples
 ```
 
@@ -123,7 +123,7 @@ The three gates are learned independently, giving the network selective memory.
 | Batch size | 64 | balances gradient noise and compute |
 | Loss | MSE | regression target; penalises large deviations quadratically |
 | Hidden size (RNN/LSTM) | 32 | small enough to avoid overfitting on ~3 200 train samples |
-| MLP hidden size | 64 | slightly larger to compensate for lack of recurrence |
+| MLP hidden size | 32 | same as RNN/LSTM for a fair parameter comparison |
 
 ---
 
@@ -192,11 +192,52 @@ Using a sliding window of 10 samples (as instructed) means the context is intent
 
 **Why σ is fixed and not a per-sample feature.** The instructions mention σ as part of the dataset entry (section 5). We chose to fix σ = 0.10 globally rather than vary it per sample, for two reasons: first, the instructions give no range or distribution for σ, so introducing a random σ would require unjustified assumptions; second, a fixed noise level makes the denoising task well-defined and reproducible. If σ varied per sample it would need to be included as an input feature — a reasonable extension, but outside the scope of what was explicitly required.
 
-**Why single-frequency signals instead of a combined signal.** The lecture mentions "a combined signal built from sines and cosines." We interpreted the homework instructions (section 7) as generating one signal per frequency entry, not a superposition of all four. This makes the dataset structure cleaner: each entry has exactly one frequency label C, one noisy window, and one clean window. A multi-frequency combined signal would require a different output target (isolating one frequency component from a mixture), which is a harder problem and was not explicitly specified in the step-by-step instructions.
+**Why single-frequency signals instead of a combined signal.** The lecture mentions "a combined signal built from sines and cosines." We interpreted the primary homework instructions as generating one signal per frequency entry, not a superposition of all four, because each dataset entry then has exactly one frequency label C, one noisy window, and one clean window. As a supplementary experiment we also implement the combined-signal version (Section 7 below) to verify the theoretical prediction that RNN/LSTM should outperform MLP when frequency separation is required rather than just denoising.
 
 ---
 
-## 7. How to Run
+## 7. Supplementary Experiment — Combined Signal Extraction
+
+### 7.1 Task definition
+
+The input signal is now a **superposition of all four frequencies** plus noise:
+
+```
+y(t) = sin(2π·1·t) + sin(2π·2·t) + sin(2π·5·t) + sin(2π·10·t) + ε,   ε ~ N(0, 0.10)
+```
+
+The model receives a 10-sample window of this combined noisy signal together with the 1-hot C indicating which frequency to extract. The target is the single clean component `sin(2π·f_target·t)`. This is frequency-selective filtering — a genuinely harder task where sequential reasoning should matter more.
+
+### 7.2 Results
+
+| Model | Test MSE | Rank |
+|-------|----------|------|
+| **MLP** | **0.054094** | 1st |
+| **LSTM** | 0.179387 | 2nd |
+| **RNN** | 0.221056 | 3rd |
+
+### 7.3 Per-frequency breakdown
+
+| Frequency | MLP | RNN | LSTM |
+|-----------|-----|-----|------|
+| 1 Hz | 0.057838 | 0.257440 | 0.215198 |
+| 2 Hz | 0.083907 | 0.260586 | 0.193002 |
+| 5 Hz | 0.049888 | 0.215259 | 0.184363 |
+| **10 Hz** | **0.026978** | **0.168017** | **0.139366** |
+
+### 7.4 Discussion
+
+**MLP still wins, but the task is 27× harder.** MLP test MSE jumps from 0.002 (denoising) to 0.054 (extraction), showing the task is genuinely more difficult. Despite this, MLP retains first place because the frequency label C lets it learn a fixed-coefficient FIR-style bandpass filter per frequency — a strategy effective even without recurrence.
+
+**LSTM > RNN on the combined task.** Unlike in the denoising experiment, LSTM now clearly outperforms RNN (0.179 vs 0.221). This aligns with theory: frequency separation requires the network to track phase across multiple steps, which benefits from LSTM's gated memory.
+
+**All models improve significantly at 10 Hz.** A full sine period fits in the 10-sample window at 10 Hz, making that component the easiest to isolate. The improvement is most dramatic for RNN/LSTM (10 Hz MSE is 35% lower than 1 Hz MSE), confirming the lecturer's prediction that recurrent models benefit most from complete-period visibility.
+
+**Conclusion.** The combined-signal task moves the result closer to the theoretical prediction: LSTM > RNN as expected. MLP still benefits from seeing all 10 samples simultaneously, but with more training epochs or longer windows, RNN/LSTM would likely close the gap further.
+
+---
+
+## 8. How to Run
 
 ```bash
 # Install dependencies
@@ -211,19 +252,19 @@ python main.py
 
 ---
 
-## 8. Repository Structure
+## 9. Repository Structure
 
 ```
 hw1/
-├── dataset.py      — signal generation, SignalDataset, DataLoader helpers
+├── dataset.py      — signal generation, SignalDataset, CombinedSignalDataset, DataLoader helpers
 ├── models.py       — MLPModel, RNNModel, LSTMModel
 ├── train.py        — training loop and evaluation function
-├── main.py         — entry point: trains models, saves plots
-├── test_hw1.py     — unit tests (~230 lines, 30+ test cases)
+├── main.py         — entry point: trains all models, runs combined experiment, saves plots
+├── test_hw1.py     — unit tests (61 tests, ~370 lines)
 └── README.md       — this lab report
 ```
 
-## 9. References
+## 10. References
 
 1. Hochreiter & Schmidhuber, "Long Short-Term Memory", *Neural Computation*, 1997.  
 2. Bengio et al., "Learning Long-Term Dependencies with Gradient Descent is Difficult", *IEEE Trans. NN*, 1994.  

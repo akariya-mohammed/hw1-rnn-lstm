@@ -86,3 +86,84 @@ def get_dataloaders(batch_size=64, train_ratio=0.8, noise_pct=0.1, seed=42):
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False)
     return train_loader, test_loader
+
+
+# ---------------------------------------------------------------------------
+# Combined-signal dataset (supplementary experiment)
+# ---------------------------------------------------------------------------
+
+def generate_combined_signal(noise_pct=0.1, sample_rate=SAMPLE_RATE, duration=DURATION, rng=None):
+    """Return (components, combined_noisy) for all four frequencies summed together.
+
+    components[i] is the clean sine wave for FREQUENCIES[i] (amplitude 1.0).
+    combined_noisy = sum(components) + Gaussian noise, noise_std = noise_pct.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+    n = int(sample_rate * duration)
+    t = np.linspace(0, duration, n, endpoint=False)
+    components = [np.sin(2 * np.pi * f * t).astype(np.float32) for f in FREQUENCIES]
+    combined_clean = sum(components).astype(np.float32)
+    noise = rng.normal(0, noise_pct, n).astype(np.float32)
+    return components, (combined_clean + noise).astype(np.float32)
+
+
+class CombinedSignalDataset(Dataset):
+    """Frequency-extraction dataset: input is a combined noisy signal, target is one component.
+
+    The network must extract the sine-wave component at the frequency indicated
+    by C from a mixture of all four frequencies plus additive Gaussian noise.
+    This is structurally harder than single-frequency denoising: the interference
+    from the other three frequencies is the dominant challenge, not the Gaussian term.
+
+    Each sample:
+        freq_vec       : 1-hot frequency encoding, shape (N_FREQS,)
+        combined_noisy : 10-sample window of the mixed noisy signal, shape (WINDOW_SIZE,)
+        component      : 10-sample window of the target clean component, shape (WINDOW_SIZE,)
+    """
+
+    def __init__(self, window_size=WINDOW_SIZE, noise_pct=0.1,
+                 sample_rate=SAMPLE_RATE, duration=DURATION, seed=42):
+        rng = np.random.default_rng(seed)
+        self.window_size = window_size
+        self._items = []
+
+        components, combined_noisy = generate_combined_signal(
+            noise_pct=noise_pct, sample_rate=sample_rate, duration=duration, rng=rng
+        )
+        n_windows = len(combined_noisy) - window_size + 1
+
+        for freq_idx in range(N_FREQS):
+            c = freq_to_onehot(freq_idx)
+            target = components[freq_idx]
+            for j in range(n_windows):
+                self._items.append((
+                    c,
+                    combined_noisy[j: j + window_size],
+                    target[j: j + window_size],
+                ))
+
+    def __len__(self):
+        return len(self._items)
+
+    def __getitem__(self, idx):
+        c, combined_noisy, component = self._items[idx]
+        return (
+            torch.from_numpy(c),
+            torch.from_numpy(combined_noisy.copy()),
+            torch.from_numpy(component.copy()),
+        )
+
+
+def get_combined_dataloaders(batch_size=64, train_ratio=0.8, noise_pct=0.1, seed=42):
+    """Return (train_loader, test_loader) for the combined signal extraction task."""
+    dataset = CombinedSignalDataset(noise_pct=noise_pct, seed=seed)
+    n_train = int(len(dataset) * train_ratio)
+    n_test = len(dataset) - n_train
+    generator = torch.Generator().manual_seed(seed)
+    train_set, test_set = torch.utils.data.random_split(
+        dataset, [n_train, n_test], generator=generator
+    )
+    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False)
+    return train_loader, test_loader

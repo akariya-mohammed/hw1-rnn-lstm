@@ -10,3 +10,5 @@ __pycache__/
 *.fdb_latexmk
 training_curves.png
 sample_predictions.png
+combined_training_curves.png
+combined_sample_predictions.png

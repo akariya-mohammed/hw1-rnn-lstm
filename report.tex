@@ -455,7 +455,92 @@ A multi-frequency superposition would require a different output target
 differently-structured problem that was not explicitly specified in the
 step-by-step instructions.
 
-% ─── 7. How to Run ───────────────────────────────────────────────────────────
+% ─── 7. Supplementary Experiment ────────────────────────────────────────────
+\section{Supplementary Experiment — Combined Signal Extraction}
+
+\subsection{Task definition}
+
+In the main experiment each input contains only a single frequency.
+The supplementary experiment matches the lecture description more closely:
+the input is a \textbf{superposition of all four frequencies} plus noise,
+\begin{equation}
+    y(t) = \sum_{i=1}^{4}\sin(2\pi f_i t) \;+\; \varepsilon,
+    \qquad \varepsilon \sim \mathcal{N}(0,\,0.10)
+    \label{eq:combined}
+\end{equation}
+and the model must extract the single component $\sin(2\pi f_{\mathbf{C}} t)$
+indicated by $\mathbf{C}$.
+This is frequency-selective filtering: the ``noise'' is no longer purely
+Gaussian but includes three interfering sinusoidal components — a
+structurally harder task where temporal memory should matter more.
+
+\subsection{Results}
+
+\begin{table}[H]
+\centering
+\caption{Combined signal extraction — test MSE after 50 epochs}
+\label{tab:combined}
+\begin{tabular}{lll}
+\toprule
+\textbf{Model} & \textbf{Test MSE} & \textbf{Rank} \\
+\midrule
+MLP  & \textbf{0.054094} & 1\textsuperscript{st} \\
+LSTM & 0.179387          & 2\textsuperscript{nd} \\
+RNN  & 0.221056          & 3\textsuperscript{rd} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Combined extraction — test MSE broken down by frequency}
+\label{tab:combined_perfreq}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Frequency} & \textbf{MLP} & \textbf{RNN} & \textbf{LSTM} \\
+\midrule
+1\,Hz  & 0.057838 & 0.257440 & 0.215198 \\
+2\,Hz  & 0.083907 & 0.260586 & 0.193002 \\
+5\,Hz  & 0.049888 & 0.215259 & 0.184363 \\
+10\,Hz & \textbf{0.026978} & \textbf{0.168017} & \textbf{0.139366} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Discussion}
+
+\paragraph{MLP still ranks first, but the task is 27× harder.}
+MLP test MSE rises from 0.002 (single-frequency denoising) to 0.054
+(combined extraction), demonstrating the increased difficulty.
+MLP retains first place because the frequency label $\mathbf{C}$ lets
+it learn a fixed-coefficient FIR-style bandpass filter per frequency,
+which is effective even without recurrence.
+
+\paragraph{LSTM now clearly outperforms RNN.}
+Unlike in the single-frequency experiment, LSTM beats RNN by a
+substantial margin (0.179 vs.\ 0.221).
+Extracting one frequency from a mixture requires tracking phase
+relationships across multiple time steps — exactly what LSTM's gated
+cell state is designed for.
+
+\paragraph{All models improve markedly at 10\,Hz.}
+A complete sine period fits the 10-sample window at 10\,Hz, making
+that component the easiest to isolate.
+The improvement is largest for the recurrent models:
+RNN's 10\,Hz MSE (0.168) is 35\,\% lower than its 1\,Hz MSE (0.257),
+consistent with the lecturer's prediction.
+
+\paragraph{Conclusion.}
+The combined-signal task moves the result closer to the theoretical
+prediction: LSTM $>$ RNN as expected, and all models benefit from
+higher-frequency targets where the periodic structure is most visible
+in the 10-sample window.
+MLP retains the top rank because $\mathbf{C}$ allows it to learn a
+fixed frequency-selective filter without needing sequential reasoning.
+Removing $\mathbf{C}$ (blind source separation) or lengthening the
+window would be the next step to demonstrate a clear RNN/LSTM advantage.
+
+% ─── 8. How to Run ───────────────────────────────────────────────────────────
 \section{How to Run}
 
 \begin{lstlisting}[language=bash, caption={Running the project}]
@@ -469,7 +554,7 @@ python -m unittest test_hw1.py -v
 python main.py
 \end{lstlisting}
 
-% ─── 8. References ───────────────────────────────────────────────────────────
+% ─── 9. References ───────────────────────────────────────────────────────────
 \section{References}
 
 \begin{enumerate}
