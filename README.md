@@ -203,7 +203,7 @@ hw1/
 
 ## 9. Self-Assessment — Expected Grade
 
-We estimate this submission deserves approximately **90 / 100**.
+We estimate this submission deserves approximately **95 / 100**.
 
 > **Note on prediction accuracy:** We predicted LSTM < RNN < MLP (LSTM best), but the actual result was MLP < LSTM < RNN (MLP best). The theoretical reasoning was sound — the 1-hot frequency vector C is the key factor that was underweighted in the prediction. See Section 6 for full analysis.
 
@@ -217,13 +217,12 @@ We estimate this submission deserves approximately **90 / 100**.
 | LSTM | ✓ | many-to-many, same interface as RNN |
 | MSE loss function | ✓ | `nn.MSELoss` |
 | Unit tests ≥ 150 lines | ✓ | 46 tests, ~230 lines |
-| README as detailed lab report | ✓ | includes theory, design choices, predictions |
+| README as detailed lab report | ✓ | includes theory, design choices, results |
 | Choices explained when not specified | ✓ | frequencies, σ, sampling rate, hidden sizes |
+| GitHub repository link | ✓ | https://github.com/akariya-mohammed/hw1-rnn-lstm |
+| PDF submission | ✓ | report.pdf generated from LaTeX |
 
-**Where we may lose ~10 points:**
-- GitHub repository link is not yet added to the README (submission requirement).
-- The PDF with the explanation and repo link has not been generated yet.
-- Hyperparameter tuning was not exhaustive — a grid search might improve results further.
+**Estimated deduction (~5 points):** Hyperparameter tuning was not exhaustive — a grid search over hidden size, learning rate, and epochs could further improve RNN and LSTM performance.
 
 ## 10. References
 
