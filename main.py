@@ -6,7 +6,7 @@ import numpy as np
 
 from dataset import get_dataloaders, generate_signal, FREQUENCIES, SAMPLE_RATE, WINDOW_SIZE
 from models import MLPModel, RNNModel, LSTMModel
-from train import train_model, evaluate_model
+from train import train_model, evaluate_model, evaluate_per_frequency
 
 N_EPOCHS = 50
 BATCH_SIZE = 64
@@ -102,9 +102,20 @@ def main():
         trained_models[name] = model
 
     print(f"\n{'='*50}")
-    print("Final Test MSE:")
+    print("Final Test MSE (overall):")
     for name, res in results.items():
         print(f"  {name:5s}: {res['final_mse']:.6f}")
+
+    print(f"\n{'='*50}")
+    print("Per-Frequency Test MSE:")
+    header = f"  {'Freq':>8}" + "".join(f"  {n:>10}" for n in results)
+    print(header)
+    per_freq = {}
+    for name, model in trained_models.items():
+        per_freq[name] = evaluate_per_frequency(model, test_loader, FREQUENCIES, device)
+    for f in FREQUENCIES:
+        row = f"  {f:>6.0f} Hz" + "".join(f"  {per_freq[n][f]:>10.6f}" for n in results)
+        print(row)
 
     plot_training_curves(results)
     plot_sample_predictions(trained_models, device)

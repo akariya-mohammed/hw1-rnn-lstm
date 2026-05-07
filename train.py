@@ -60,3 +60,27 @@ def evaluate_model(model, test_loader, device="cpu"):
             clean = clean.to(device)
             total += criterion(model(freq_vec, noisy), clean).item()
     return total / len(test_loader)
+
+
+def evaluate_per_frequency(model, test_loader, frequencies, device="cpu"):
+    """Return {freq: mse} for each frequency separately."""
+    model.eval()
+    criterion = nn.MSELoss(reduction="sum")
+    sums = {f: 0.0 for f in frequencies}
+    counts = {f: 0 for f in frequencies}
+
+    with torch.no_grad():
+        for freq_vec, noisy, clean in test_loader:
+            freq_vec = freq_vec.to(device)
+            noisy = noisy.to(device)
+            clean = clean.to(device)
+            pred = model(freq_vec, noisy)
+
+            # identify which frequency each sample belongs to
+            freq_idx = freq_vec.argmax(dim=1)
+            for i, fidx in enumerate(freq_idx):
+                f = frequencies[fidx.item()]
+                sums[f] += criterion(pred[i], clean[i]).item()
+                counts[f] += clean.shape[1]  # number of elements per sample
+
+    return {f: sums[f] / counts[f] for f in frequencies}

@@ -142,6 +142,24 @@ Per-frequency predictions are saved to `sample_predictions.png`.
 
 This is the **opposite** of the theoretical prediction (LSTM < RNN < MLP). See Section 6 for the analysis.
 
+### Per-Frequency Test MSE
+
+The lecturer explicitly predicted that RNNs perform better on high-frequency signals because they need to remember fewer past samples to recognise the pattern. The table below tests this directly:
+
+| Frequency | MLP | RNN | LSTM |
+|-----------|-----|-----|------|
+| 1 Hz  | 0.001940 | 0.006345 | 0.005535 |
+| 2 Hz  | 0.001937 | 0.006839 | 0.005664 |
+| 5 Hz  | 0.001924 | 0.006319 | 0.005425 |
+| **10 Hz** | **0.001572** | 0.006765 | **0.005083** |
+
+**Key observations:**
+- **MLP** improves the most at 10 Hz (full period visible — easier global regression). Its drop from 1 Hz to 10 Hz is the largest of any model.
+- **LSTM** follows the predicted direction: best at 10 Hz (0.005083), worst at 2 Hz (0.005664), consistent with needing fewer memory steps for fast signals.
+- **RNN** does *not* clearly follow the prediction — its 10 Hz MSE (0.006765) is actually higher than its 1 Hz MSE (0.006345). The differences across frequencies are small and inconsistent.
+
+The lecturer's prediction holds partially for LSTM but not for RNN, likely because the denoising framing (where `C` already encodes the frequency) reduces how much temporal reasoning the network needs to do.
+
 ---
 
 ## 6. Discussion
