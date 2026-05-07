@@ -13,6 +13,7 @@ from models import MLPModel, RNNModel, LSTMModel
 from train import train_model, evaluate_model, evaluate_per_frequency
 
 N_EPOCHS = 50
+N_EPOCHS_COMBINED = 200
 BATCH_SIZE = 64
 LR = 1e-3
 NOISE_PCT = 0.1
@@ -91,7 +92,7 @@ def combined_experiment(device):
         print(f"--- Combined: {name} ---")
         model = ModelClass()
         train_losses, test_losses = train_model(
-            model, train_loader, test_loader, n_epochs=N_EPOCHS, lr=LR, device=device
+            model, train_loader, test_loader, n_epochs=N_EPOCHS_COMBINED, lr=LR, device=device
         )
         final_mse = evaluate_model(model, test_loader, device=device)
         results[name] = {"train_losses": train_losses, "test_losses": test_losses, "final_mse": final_mse}
