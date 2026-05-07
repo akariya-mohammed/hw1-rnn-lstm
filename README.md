@@ -2,6 +2,7 @@
 
 **Course:** AI Orchestration / Deep Learning  
 **Lecturer:** Dr. Yoram Segal  
+**Repository:** https://github.com/akariya-mohammed/hw1-rnn-lstm  
 
 ---
 
