@@ -2,6 +2,7 @@
 
 **Course:** AI Orchestration / Deep Learning  
 **Lecturer:** Dr. Yoram Segal  
+**Students:** Mohammad Akariya (211862024) · Jude Khleif (325233633)  
 **Repository:** https://github.com/akariya-mohammed/hw1-rnn-lstm  
 
 ---
