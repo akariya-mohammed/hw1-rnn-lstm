@@ -15,7 +15,7 @@ class MLPModel(nn.Module):
     Output : clean_samples [WINDOW_SIZE]
     """
 
-    def __init__(self, window_size=WINDOW_SIZE, n_freqs=N_FREQS, hidden_size=64):
+    def __init__(self, window_size=WINDOW_SIZE, n_freqs=N_FREQS, hidden_size=32):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(window_size + n_freqs, hidden_size),

@@ -134,13 +134,13 @@ Per-frequency predictions are saved to `sample_predictions.png`.
 
 | Model | Parameters | Final Test MSE | Rank |
 |-------|-----------|----------------|------|
-| **MLP** | 5,770 | **0.001842** | 🥇 1st |
-| **LSTM** | 5,025 | 0.005414 | 🥈 2nd |
-| **RNN** | 1,281 | 0.006231 | 🥉 3rd |
+| **MLP** | 1,866 | **0.002263** | 1st |
+| **LSTM** | 5,025 | 0.005568 | 2nd |
+| **RNN** | 1,281 | 0.006222 | 3rd |
 
-**Actual ranking: MLP < LSTM < RNN** (lower MSE = better)
+All models use hidden size 32. MLP and RNN have comparable parameter counts (1,866 vs 1,281).
 
-This is the **opposite** of the theoretical prediction (LSTM < RNN < MLP). See Section 6 for the analysis.
+**Actual ranking: MLP < LSTM < RNN** (lower MSE = better), opposite to the theoretical prediction. See Section 6.
 
 ### Per-Frequency Test MSE
 
@@ -148,17 +148,17 @@ The lecturer explicitly predicted that RNNs perform better on high-frequency sig
 
 | Frequency | MLP | RNN | LSTM |
 |-----------|-----|-----|------|
-| 1 Hz  | 0.001940 | 0.006345 | 0.005535 |
-| 2 Hz  | 0.001937 | 0.006839 | 0.005664 |
-| 5 Hz  | 0.001924 | 0.006319 | 0.005425 |
-| **10 Hz** | **0.001572** | 0.006765 | **0.005083** |
+| 1 Hz  | 0.002083 | 0.006507 | 0.005621 |
+| 2 Hz  | 0.002282 | 0.006398 | 0.005433 |
+| 5 Hz  | 0.002188 | 0.006622 | 0.005063 |
+| **10 Hz** | **0.002080** | 0.006596 | **0.005049** |
 
 **Key observations:**
-- **MLP** improves the most at 10 Hz (full period visible — easier global regression). Its drop from 1 Hz to 10 Hz is the largest of any model.
-- **LSTM** follows the predicted direction: best at 10 Hz (0.005083), worst at 2 Hz (0.005664), consistent with needing fewer memory steps for fast signals.
-- **RNN** does *not* clearly follow the prediction — its 10 Hz MSE (0.006765) is actually higher than its 1 Hz MSE (0.006345). The differences across frequencies are small and inconsistent.
+- **MLP** is relatively stable across all frequencies. Its best result is at 10 Hz (full period visible), but the improvement is modest — consistent with the flat network not exploiting sequential structure.
+- **LSTM** clearly improves at higher frequencies: 0.005621 at 1 Hz down to 0.005049 at 10 Hz, matching the lecturer's prediction.
+- **RNN** shows no consistent trend — differences across frequencies are small and noisy, suggesting it is not effectively exploiting temporal structure in this denoising setup.
 
-The lecturer's prediction holds partially for LSTM but not for RNN, likely because the denoising framing (where `C` already encodes the frequency) reduces how much temporal reasoning the network needs to do.
+The lecturer's prediction holds for LSTM but not for RNN, because providing C explicitly removes the need for the networks to infer frequency from temporal patterns. The RNN lacks the gated memory to exploit what little temporal signal remains.
 
 ---
 
@@ -187,6 +187,12 @@ The correct model choice depends on whether the task truly requires sequential r
 ### Sliding window vs. full sequence
 
 Using a sliding window of 10 samples (as instructed) means the context is intentionally limited. A larger window would make the frequency-identification task easier but would increase model complexity and training cost. The 1-hot C vector compensates by telling the model which frequency it is working with.
+
+### Design decisions not specified in the instructions
+
+**Why σ is fixed and not a per-sample feature.** The instructions mention σ as part of the dataset entry (section 5). We chose to fix σ = 0.10 globally rather than vary it per sample, for two reasons: first, the instructions give no range or distribution for σ, so introducing a random σ would require unjustified assumptions; second, a fixed noise level makes the denoising task well-defined and reproducible. If σ varied per sample it would need to be included as an input feature — a reasonable extension, but outside the scope of what was explicitly required.
+
+**Why single-frequency signals instead of a combined signal.** The lecture mentions "a combined signal built from sines and cosines." We interpreted the homework instructions (section 7) as generating one signal per frequency entry, not a superposition of all four. This makes the dataset structure cleaner: each entry has exactly one frequency label C, one noisy window, and one clean window. A multi-frequency combined signal would require a different output target (isolating one frequency component from a mixture), which is a harder problem and was not explicitly specified in the step-by-step instructions.
 
 ---
 
@@ -217,32 +223,7 @@ hw1/
 └── README.md       — this lab report
 ```
 
----
-
-## 9. Self-Assessment — Expected Grade
-
-We estimate this submission deserves approximately **95 / 100**.
-
-> **Note on prediction accuracy:** We predicted LSTM < RNN < MLP (LSTM best), but the actual result was MLP < LSTM < RNN (MLP best). The theoretical reasoning was sound — the 1-hot frequency vector C is the key factor that was underweighted in the prediction. See Section 6 for full analysis.
-
-| Requirement | Done? | Notes |
-|-------------|-------|-------|
-| Dataset: noisy + clean sine waves, 4 frequencies | ✓ | 1, 2, 5, 10 Hz; σ = 10 % |
-| 1-hot frequency encoding vector C | ✓ | length-4 float32 vector |
-| 10-sample context window | ✓ | sliding window over 10 s signal |
-| Fully-connected MLP | ✓ | 2 hidden layers, ReLU |
-| RNN | ✓ | many-to-many, hidden size 32 |
-| LSTM | ✓ | many-to-many, same interface as RNN |
-| MSE loss function | ✓ | `nn.MSELoss` |
-| Unit tests ≥ 150 lines | ✓ | 46 tests, ~230 lines |
-| README as detailed lab report | ✓ | includes theory, design choices, results |
-| Choices explained when not specified | ✓ | frequencies, σ, sampling rate, hidden sizes |
-| GitHub repository link | ✓ | https://github.com/akariya-mohammed/hw1-rnn-lstm |
-| PDF submission | ✓ | report.pdf generated from LaTeX |
-
-**Estimated deduction (~5 points):** Hyperparameter tuning was not exhaustive — a grid search over hidden size, learning rate, and epochs could further improve RNN and LSTM performance.
-
-## 10. References
+## 9. References
 
 1. Hochreiter & Schmidhuber, "Long Short-Term Memory", *Neural Computation*, 1997.  
 2. Bengio et al., "Learning Long-Term Dependencies with Gradient Descent is Difficult", *IEEE Trans. NN*, 1994.  

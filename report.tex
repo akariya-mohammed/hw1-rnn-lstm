@@ -115,8 +115,8 @@ Each model receives a 10-sample window of a noisy sine wave together with
 a one-hot encoding of the signal frequency, and is trained to recover the
 underlying clean signal using Mean Squared Error (MSE) loss.
 Contrary to the theoretical prediction that the LSTM would achieve the
-lowest error, the MLP obtained the best test MSE (0.0018), followed by
-the LSTM (0.0054) and the RNN (0.0062).
+lowest error, the MLP obtained the best test MSE (0.0023), followed by
+the LSTM (0.0056) and the RNN (0.0062).
 The report analyses the reasons behind this result and discusses what it
 reveals about the relationship between model choice and task structure.
 \end{abstract}
@@ -173,7 +173,7 @@ justification.
 \textbf{Symbol} & \textbf{Value} & \textbf{Justification} \\
 \midrule
 $A$ (amplitude)       & 1.0     & Unit scale — simplifies analysis \\
-$\sigma$ (noise \%)   & 0.10    & 10\,\% of amplitude; audible yet learnable \\
+$\sigma$ (noise \%)   & 0.10    & 10\,\% of amplitude; large enough to perturb, small enough to denoise \\
 $f_s$ (sample rate)   & 100\,Hz & Satisfies Nyquist for all four frequencies \\
 $T$ (duration)        & 10\,s   & 1\,000 samples per frequency \\
 Window size           & 10      & As specified; equals 100\,ms of data \\
@@ -232,8 +232,8 @@ flat input vector and maps it to the clean output through two hidden layers:
         &= W_3\,\text{ReLU}\!\bigl(W_2\,\text{ReLU}(W_1\mathbf{x}+b_1)+b_2\bigr)+b_3
 \end{align}
 
-Layer sizes: $14 \to 64 \to 64 \to 10$.
-Total trainable parameters: \textbf{5\,770}.
+Layer sizes: $14 \to 32 \to 32 \to 10$.
+Total trainable parameters: \textbf{1\,866}.
 
 The MLP sees all 10 samples simultaneously but has no concept of their
 temporal order.
@@ -296,7 +296,7 @@ Epochs             & 50          & Sufficient for convergence on this dataset \\
 Batch size         & 64          & Balances gradient variance and compute \\
 Loss               & MSE         & Quadratic penalty on reconstruction error \\
 RNN / LSTM hidden  & 32          & Avoids overfitting on $\sim$3\,200 train samples \\
-MLP hidden         & 64          & Larger to compensate for no recurrence \\
+MLP hidden         & 32          & Same scale as RNN for a fair comparison \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -312,9 +312,9 @@ MLP hidden         & 64          & Larger to compensate for no recurrence \\
 \toprule
 \textbf{Model} & \textbf{Parameters} & \textbf{Test MSE} & \textbf{Rank} \\
 \midrule
-MLP  & 5\,770 & \textbf{0.001842} & 1\textsuperscript{st} (best) \\
-LSTM & 5\,025 & 0.005414          & 2\textsuperscript{nd} \\
-RNN  & 1\,281 & 0.006231          & 3\textsuperscript{rd} \\
+MLP  & 1\,866 & \textbf{0.002263} & 1\textsuperscript{st} (best) \\
+LSTM & 5\,025 & 0.005568          & 2\textsuperscript{nd} \\
+RNN  & 1\,281 & 0.006222          & 3\textsuperscript{rd} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -339,10 +339,10 @@ Table~\ref{tab:perfreq} tests this prediction directly.
 \toprule
 \textbf{Frequency} & \textbf{MLP} & \textbf{RNN} & \textbf{LSTM} \\
 \midrule
-1\,Hz  & 0.001940 & 0.006345 & 0.005535 \\
-2\,Hz  & 0.001937 & 0.006839 & 0.005664 \\
-5\,Hz  & 0.001924 & 0.006319 & 0.005425 \\
-10\,Hz & \textbf{0.001572} & 0.006765 & \textbf{0.005083} \\
+1\,Hz  & 0.002083 & 0.006507 & 0.005621 \\
+2\,Hz  & 0.002282 & 0.006398 & 0.005433 \\
+5\,Hz  & 0.002188 & 0.006622 & 0.005063 \\
+10\,Hz & \textbf{0.002080} & 0.006596 & \textbf{0.005049} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -352,10 +352,10 @@ First, the \textbf{MLP} improves the most at 10\,Hz (one full period
 visible in the window), where global regression over all 10 samples is
 most informative.
 Second, the \textbf{LSTM} follows the predicted direction: lowest MSE
-at 10\,Hz (0.005083) and highest at 2\,Hz (0.005664), consistent with
+at 10\,Hz (0.005049) and highest at 1\,Hz (0.005621), consistent with
 needing fewer memory steps for faster signals.
 Third, the \textbf{RNN} does \emph{not} clearly follow the prediction ---
-its 10\,Hz MSE (0.006765) is actually higher than its 1\,Hz MSE (0.006345).
+its 10\,Hz MSE (0.006596) is actually higher than its 1\,Hz MSE (0.006507).
 The per-frequency differences for the RNN are small and inconsistent,
 suggesting that its hidden state is not effectively exploiting temporal
 structure in this denoising setup.
@@ -432,42 +432,30 @@ If $\mathbf{C}$ were removed and the model had to infer the frequency
 from raw noisy samples alone, the RNN/LSTM advantage would likely
 reappear.
 
-% ─── 7. Self-Assessment ──────────────────────────────────────────────────────
-\section{Self-Assessment — Expected Grade}
+\subsection{Design decisions not specified in the instructions}
 
-The estimated grade for this submission is \textbf{95\,/\,100}.
+\paragraph{Why $\sigma$ is fixed globally rather than varying per sample.}
+The instructions mention $\sigma$ as part of the dataset description but
+give no range or distribution for it.
+Introducing a random $\sigma$ would require unjustified assumptions, and
+if it varied per sample it would need to be passed as an additional input
+feature.
+Fixing $\sigma = 0.10$ globally keeps the denoising task well-defined
+and reproducible without adding model complexity beyond what was required.
 
-\begin{table}[H]
-\centering
-\caption{Requirement checklist}
-\label{tab:checklist}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Requirement} & \textbf{Status} & \textbf{Notes} \\
-\midrule
-Dataset: noisy + clean sine waves, 4 frequencies & \cmark & 1, 2, 5, 10\,Hz; $\sigma=10\%$ \\
-One-hot frequency encoding $\mathbf{C}$           & \cmark & Length-4 float32 vector \\
-10-sample context window                           & \cmark & Sliding window over 10\,s signal \\
-Fully-connected MLP                                & \cmark & 2 hidden layers, ReLU \\
-RNN                                                & \cmark & Many-to-many, hidden size 32 \\
-LSTM                                               & \cmark & Many-to-many, same interface as RNN \\
-MSE loss function                                  & \cmark & \texttt{nn.MSELoss} \\
-Unit tests $\geq$ 150 lines                        & \cmark & 46 tests, $\sim$230 lines \\
-README as detailed lab report                      & \cmark & Theory, design choices, results \\
-Choices explained when not specified               & \cmark & Frequencies, $\sigma$, hidden sizes \\
-GitHub repository link                             & \cmark & See title page \\
-PDF submission                                     & \cmark & This document \\
-\bottomrule
-\end{tabular}
-\end{table}
+\paragraph{Why single-frequency signals rather than a combined signal.}
+The lecture discusses a combined signal built from sines and cosines, but
+the homework instructions describe generating one signal per frequency
+entry.
+We chose to generate independent signals — one per frequency — so that
+each dataset entry has exactly one frequency label $\mathbf{C}$, one
+noisy window, and one clean window.
+A multi-frequency superposition would require a different output target
+(isolating one component from a mixture), which is a harder and
+differently-structured problem that was not explicitly specified in the
+step-by-step instructions.
 
-\textbf{Estimated deduction ($\sim$5 points):} Hyperparameter tuning
-was not exhaustive.
-A grid search over hidden size, learning rate, and number of epochs
-would likely improve the RNN and LSTM results and close the gap
-with the MLP.
-
-% ─── 8. How to Run ───────────────────────────────────────────────────────────
+% ─── 7. How to Run ───────────────────────────────────────────────────────────
 \section{How to Run}
 
 \begin{lstlisting}[language=bash, caption={Running the project}]
@@ -481,7 +469,7 @@ python -m unittest test_hw1.py -v
 python main.py
 \end{lstlisting}
 
-% ─── 9. References ───────────────────────────────────────────────────────────
+% ─── 8. References ───────────────────────────────────────────────────────────
 \section{References}
 
 \begin{enumerate}

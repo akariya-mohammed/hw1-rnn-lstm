@@ -119,7 +119,7 @@ def main():
 
     plot_training_curves(results)
     plot_sample_predictions(trained_models, device)
-    plt.show()
+    plt.close("all")
 
 
 if __name__ == "__main__":
